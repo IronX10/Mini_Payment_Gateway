@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: Mini_Payment_Gateway
+
+# Datasource (override via env)
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/mpg_db}
+    username: ${SPRING_DATASOURCE_USERNAME:mpg}
+    password: ${SPRING_DATASOURCE_PASSWORD:mpg_pass}
+    driver-class-name: org.postgresql.Driver
+
+  flyway:
+    enabled: true
+
+# Kafka
+spring:
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+# Redis (for rate-limiting / caching)
+spring:
+  redis:
+    host: ${SPRING_REDIS_HOST:localhost}
+    port: ${SPRING_REDIS_PORT:6379}
+
+# Management
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+server:
+  port: ${SERVER_PORT:8080}

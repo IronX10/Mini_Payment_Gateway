@@ -1,0 +1,2 @@
+-- Flyway baseline migration (empty)
+-- Add schema migrations in later phases (V2__core.sql etc)
