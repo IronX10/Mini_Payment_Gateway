@@ -179,3 +179,14 @@ The dangerous window is "Kafka acked, but the SENT flag never committed". `Outbo
 
 ### What the ITs switch off, and why
 The rate limiter and the fraud engine are disabled in the integration context: the storm is *supposed* to exceed 20 req/s, and a burst of payments would trip the velocity rule and be held rather than settled. Both have their own unit tests; the ITs are about the money path and the async pipeline. One integration detail caught by this phase: Spring Boot 4 brings Jackson 3 (`tools.jackson`) and Testcontainers 2 (modules renamed `testcontainers-*`, `PostgreSQLContainer` moved to `org.testcontainers.postgresql`), so the Redis cache serializer was moved to Spring Data Redis's Jackson 3 `GenericJacksonJsonRedisSerializer`.
+
+## Phase 7 — Packaging and CI
+
+### A layered, non-root image
+The `Dockerfile` is multi-stage: a JDK stage builds with the Maven wrapper (dependencies resolved in their own layer, so a source-only change doesn't re-download them), and a JRE-only runtime stage runs the app as a non-root user. The fat jar is unpacked with Spring Boot's `jarmode=tools` into dependency/loader/application layers, ordered least- to most-volatile, so a code change rebuilds and pushes only the small application layer. `MaxRAMPercentage` makes the JVM size its heap from the container's memory limit, not the host's.
+
+### One broker, no ZooKeeper
+Compose runs a single-node **KRaft** Kafka (`apache/kafka`, the same image the integration tests use) instead of ZooKeeper + broker. Beyond being the direction Kafka itself has taken, it removed a real startup race: Kafka could give up waiting for ZooKeeper before ZooKeeper was ready, and `depends_on` only waits for a container to *start*. Every dependency now has a healthcheck and the app waits on `service_healthy`. The broker advertises two listeners, `kafka:29092` for containers and `localhost:9092` for processes on the host, so the same compose file serves both the full-stack run and IDE development. A single broker with replication factor 1 is a dev/demo topology; production would run at least three brokers with `min.insync.replicas=2` and `acks=all`.
+
+### CI: test, then package
+CI runs `./mvnw verify` (unit + Testcontainers) and only then builds the Docker image, so an image is never produced from a red build. The image isn't pushed yet; pushing to a registry and deploying are the next step once a target is chosen.
