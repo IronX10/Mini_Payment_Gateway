@@ -28,6 +28,7 @@
     </scm>
     <properties>
         <java.version>17</java.version>
+        <bucket4j.version>8.10.1</bucket4j.version>
     </properties>
     <dependencies>
         <dependency>
@@ -41,6 +42,22 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <!--
+          Bucket4j: distributed token-bucket rate limiting. bucket4j-redis holds the bucket state
+          in Redis (via the Lettuce client Spring Data Redis already ships), so the limit is shared
+          across every app instance rather than living in per-JVM memory. Version pinned explicitly
+          because it is not managed by the Spring Boot BOM.
+        -->
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j-core</artifactId>
+            <version>${bucket4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j-redis</artifactId>
+            <version>${bucket4j.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -108,6 +125,52 @@
             <artifactId>spring-boot-starter-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!--
+          Phase 6 test dependencies. Versions are all managed by the Spring Boot 4.1.0 BOM, so none
+          is pinned here (keeping the framework version authoritative, per the project's constraint).
+
+          spring-boot-starter-test is the curated aggregate that guarantees JUnit 5 (Jupiter),
+          Mockito + mockito-junit-jupiter, and AssertJ for the pure unit tests; it coexists with the
+          modular *-test starters above.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
+          Testcontainers: the integration tests spin up REAL Postgres, Kafka and Redis in disposable
+          Docker containers. Boot 4 manages Testcontainers 2.x, whose modules are prefixed
+          'testcontainers-'. spring-boot-testcontainers wires them into Spring via @ServiceConnection
+          (no manual @DynamicPropertySource for the datasource/kafka/redis coordinates).
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-kafka</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Awaitility: poll for the async outbox->Kafka->webhook pipeline to converge, without sleeps. -->
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -157,6 +220,23 @@
                                 </path>
                             </annotationProcessorPaths>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!--
+              Test pyramid split: surefire (mvn test) runs the fast, Docker-free *Test unit tests;
+              failsafe (mvn verify) runs the *IT Testcontainers integration tests, which need Docker.
+              Version managed by the Spring Boot parent.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>

@@ -6,20 +6,95 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME:mpg}
     password: ${SPRING_DATASOURCE_PASSWORD:mpg_pass}
     driver-class-name: org.postgresql.Driver
+  jpa:
+    # Flyway owns the schema; Hibernate must never touch it. 'none' avoids brittle validation
+    # against native enum / jsonb column definitions.
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
   flyway:
     enabled: true
   kafka:
     bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-  redis:
-    host: ${SPRING_REDIS_HOST:localhost}
-    port: ${SPRING_REDIS_PORT:6379}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # Wait for the leader ack before we mark an outbox row SENT.
+      acks: "1"
+    consumer:
+      group-id: ${MPG_KAFKA_CONSUMER_GROUP:mpg-webhooks}
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # A fresh consumer group replays from the start so no already-published event is missed.
+      auto-offset-reset: earliest
+  # Boot 2.4+ moved Redis config under spring.data.redis
+  data:
+    redis:
+      host: ${SPRING_REDIS_HOST:localhost}
+      port: ${SPRING_REDIS_PORT:6379}
+
+# Application-specific tunables (bound via @ConfigurationProperties)
+mpg:
+  locking:
+    strategy: ${MPG_LOCKING_STRATEGY:PESSIMISTIC}   # PESSIMISTIC | OPTIMISTIC
+    max-retries: 5
+    base-backoff-millis: 20
+  outbox:
+    topic: ${MPG_OUTBOX_TOPIC:payment.events}
+    poll-ms: 500
+    batch-size: 100
+  webhook:
+    max-attempts: 6
+    base-backoff-seconds: 60      # attempt 1 -> ~1m, 2 -> ~5m, 3 -> ~25m, ...
+    backoff-multiplier: 5
+    max-backoff-seconds: 3600
+    retry-poll-ms: 1000
+    retry-batch-size: 50
+    connect-timeout-ms: 2000
+    read-timeout-ms: 3000
+  kafka:
+    consumer-group: ${MPG_KAFKA_CONSUMER_GROUP:mpg-webhooks}
+  ratelimit:
+    enabled: ${MPG_RATELIMIT_ENABLED:true}
+    api-key-header: X-Api-Key
+    # Policy: 100 requests/minute sustained, bursts capped at 20/second (two token buckets).
+    sustained-tokens: 100
+    sustained-period-seconds: 60
+    burst-tokens: 20
+    burst-period-seconds: 1
+  cache:
+    # Short TTL bounds how stale a cached GET /accounts/{id} balance can be (5-10s per the design).
+    account-ttl-seconds: 5
+  fraud:
+    enabled: ${MPG_FRAUD_ENABLED:true}
+    score-threshold: 50          # total rule weight at/above which a payment is HELD
+    budget-millis: 50            # strict scoring budget; on breach -> default-allow + log
+    # Rule: velocity (Redis counter from Phase 4). Fires at/above this many payments/minute.
+    velocity-threshold: 10
+    weight-velocity: 50          # a clear burst holds on its own
+    # Rule: amount above the account's 30-day P95 (needs enough history first).
+    p95-lookback-days: 30
+    p95-min-samples: 20
+    weight-amount-over-p95: 40
+    # Rule: first successful payment ever to this destination.
+    weight-first-time-payee: 15
+    # Rule: round amount during [start,end) UTC midnight hours (both must hold).
+    round-amount-multiple: 1000
+    midnight-start-hour: 0
+    midnight-end-hour: 5
+    weight-round-midnight: 25
 
 # Management
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        # metrics backs the Phase 6 load tests (http.server.requests gives per-endpoint latency).
+        include: health,info,metrics
   endpoint:
     health:
       show-details: always

@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      # verify = unit tests (surefire) + Testcontainers integration tests (failsafe).
+      # GitHub-hosted Ubuntu runners ship Docker, which Testcontainers uses directly.
+      - name: Build and test
+        run: ./mvnw -B verify
