@@ -11,6 +11,10 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SPRING_REDIS_HOST: redis
       SPRING_REDIS_PORT: 6379
+      # Feature toggles, overridable from the shell for load-test stages (see LOAD_TEST.md).
+      MPG_LOCKING_STRATEGY: ${MPG_LOCKING_STRATEGY:-PESSIMISTIC}
+      MPG_RATELIMIT_ENABLED: ${MPG_RATELIMIT_ENABLED:-true}
+      MPG_FRAUD_ENABLED: ${MPG_FRAUD_ENABLED:-true}
     ports:
       - "8080:8080"
     depends_on:

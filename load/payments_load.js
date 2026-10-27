@@ -11,7 +11,11 @@ import { Counter } from 'k6/metrics';
 import { uuidv4 } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
 
 const BASE = __ENV.BASE_URL || 'http://localhost:8080';
-const rateLimited = new Counter('rate_limited');
+// Outcomes by status, so a run reports settled TPS separately from contention and throttling.
+const settled = new Counter('settled');         // 201
+const conflicts = new Counter('conflicts');     // 409: optimistic retries exhausted
+const rateLimited = new Counter('rate_limited'); // 429
+const otherStatus = new Counter('other_status');
 
 export const options = {
     thresholds: {
@@ -29,8 +33,14 @@ export default function () {
                 'Idempotency-Key': uuidv4(),
             },
         });
-    if (res.status === 429) {
+    if (res.status === 201) {
+        settled.add(1);
+    } else if (res.status === 409) {
+        conflicts.add(1);
+    } else if (res.status === 429) {
         rateLimited.add(1);
+    } else {
+        otherStatus.add(1);
     }
     check(res, { 'status 200/201/202/429': (r) => [200, 201, 202, 429].includes(r.status) });
 }

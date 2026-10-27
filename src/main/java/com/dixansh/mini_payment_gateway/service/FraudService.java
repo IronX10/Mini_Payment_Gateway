@@ -88,9 +88,15 @@ public class FraudService {
             log.warn("fraud scoring exceeded {}ms budget for {}->{}, defaulting to allow",
                     properties.getBudgetMillis(), source, dest);
             return FraudDecision.allow();
-        } catch (Exception e) {
+        } catch (InterruptedException interrupted) {
             future.cancel(true);
-            Thread.currentThread().interrupt(); // in case we were interrupted while waiting
+            Thread.currentThread().interrupt(); // preserve the caller's interrupt status
+            log.warn("fraud scoring interrupted for {}->{}, defaulting to allow", source, dest);
+            return FraudDecision.allow();
+        } catch (Exception e) {
+            // A rule threw (ExecutionException) - the request thread itself was NOT interrupted, so
+            // its interrupt flag must stay clear or the payment's own DB work and backoff would fail.
+            future.cancel(true);
             log.warn("fraud scoring failed for {}->{}, defaulting to allow: {}", source, dest, e.getMessage());
             return FraudDecision.allow();
         }

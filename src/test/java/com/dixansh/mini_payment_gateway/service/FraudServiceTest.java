@@ -67,9 +67,6 @@ class FraudServiceTest {
     @AfterEach
     void tearDown() {
         fraudService.shutdown();
-        // score()'s fail-open path re-interrupts the calling thread; clear the flag so it can't leak
-        // into the next test and make a later Future.get() throw InterruptedException spuriously.
-        Thread.interrupted();
     }
 
     @Test
@@ -209,6 +206,9 @@ class FraudServiceTest {
 
         assertThat(decision.hold()).isFalse();
         assertThat(decision.score()).isZero();
+        // The caller (the payment's request thread) was never interrupted, so failing open must not
+        // leave its interrupt flag set - that would break the DB work the payment does next.
+        assertThat(Thread.currentThread().isInterrupted()).isFalse();
     }
 
     // --- roundAmountAtMidnight: pure, tested directly with fixed instants (no clock dependency) ---

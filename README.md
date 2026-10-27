@@ -111,11 +111,18 @@ The full reasoning, with alternatives and trade-offs, is in [DECISIONS.md](DECIS
 ./mvnw verify   # + Testcontainers integration tests (needs Docker)
 ```
 
-The integration tests run the whole app against real Postgres, Kafka and Redis containers. They cover the happy path, idempotent replay, 20 threads racing the same idempotency key, a 50-thread transfer storm (money conserved, ledger sums to zero, no negative balances), outbox recovery after a simulated crash, and webhook retry and dead-lettering. CI runs `verify` and then builds the Docker image.
+The integration tests run the whole app against real Postgres, Kafka and Redis containers. They cover the happy path, idempotent replay, 20 threads racing the same idempotency key, a 50-thread transfer storm (money conserved, ledger sums to zero, no negative balances), outbox recovery after a simulated crash, webhook retry and dead-lettering, and a fraud burst being held and then released. CI runs `verify` and then builds the Docker image.
 
 ## Load testing
 
-The k6 script is in [`load/payments_load.js`](load/payments_load.js); the procedure and results are logged in [LOAD_TEST.md](LOAD_TEST.md).
+Measured with k6 on an M1 laptop running the whole stack, so these are local numbers (full method and caveats in [LOAD_TEST.md](LOAD_TEST.md)). The workload is 50 concurrent clients paying from the **same** account to the **same** account, the worst case for row contention:
+
+| Locking strategy | Settled TPS | P95 | Failed requests |
+|---|---|---|---|
+| Pessimistic (default) | 218–255 | 452–516 ms | 0% |
+| Optimistic + retry | 347 | 356 ms | 16.7% (`409` after 5 retries) |
+
+The ledger balanced to zero after every run. The Redis rate limiter's overhead was within run-to-run noise, and a smoke test shows it admits exactly the configured budget per API key (116 requests in 10 s = 100 capacity + refill) while rejecting the excess in ~3 ms without affecting other keys.
 
 ## Configuration
 
@@ -131,3 +138,7 @@ Common environment overrides:
 | `SPRING_REDIS_HOST` / `SPRING_REDIS_PORT` | `localhost` / `6379` | Redis |
 
 All other tunables (backoff schedule, fraud weights and thresholds, cache TTL) are under `mpg.*` in [`application.yaml`](src/main/resources/application.yaml).
+
+## License
+
+[MIT](LICENSE)
